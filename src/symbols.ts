@@ -7,6 +7,7 @@ import { getImportedFiles, includes } from "./includes";
 import { builtInSymbols, output } from "./extension";
 import { getAspRegions, getRegionsInsideRange, positionIsInsideAspRegion, regionIsInsideAspRegion, replaceCharacter } from "./region";
 import { AspDocumentation, AspSymbol, VirtualPath } from "./types";
+import { parseType } from "./parseVariableType";
 
 const showVariableSymbols: boolean = workspace.getConfiguration("asp").get<boolean>("showVariableSymbols");
 const showParameterSymbols: boolean = workspace.getConfiguration("asp").get<boolean>("showParameterSymbols");
@@ -48,13 +49,14 @@ const CLASS = RegExp(PATTERNS.CLASS.source, "i");
 const PROP = RegExp(PATTERNS.PROP.source, "i");
 
 const docSymbols = new Map <string, Set<AspSymbol>>();
+const docClassVariables = new Map<string, Map<string, AspSymbol>>();
+
 export const currentDocSymbols = (docFileName: string) => docSymbols.has(docFileName) ?
 	docSymbols.get(docFileName) :
 	new Set<AspSymbol>();
 
 /** Gets all DocumentSymbols for the given document. */
 function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): DocumentSymbol[] {
-
   /** The final list of symbols parsed from this document */
   const result: DocumentSymbol[] = [];
 
@@ -201,7 +203,6 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
 
       }
       else if (showVariableSymbols) {
-
         while ((matches = PATTERNS.VAR.exec(lineText)) !== null) {
 
 					// Split multiple variables from the same line
@@ -233,8 +234,10 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
 								variableSymbol.definition = lineText.trim().replace(/\bconst\b/i, "Const");
               }
               else if ((/\bSet\b/i).test(matches[0])) {
+								const variableType = parseType(matches[3]?.toString(), collection);
                 symKind = SymbolKind.Struct;
-								variableSymbol.definition = `Set ${cleanVariableName}`;
+								variableSymbol.definition = `Set ${cleanVariableName} as ${variableType?.type}${matches[3]}`;
+								variableSymbol.type = variableType.type;
               }
               else if ((/\w+[\t ]*\([\t ]*\d*[\t ]*\)/i).test(variableName)) {
                 symKind = SymbolKind.Array;
@@ -263,6 +266,45 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
             }
           }
         }
+
+				while ((matches = PATTERNS.CLASS_VAR.exec(lineText)) !== null) {
+					console.log('FOUND: ', matches);
+					let symbolForVariable: AspSymbol;
+					let symbolForObject: AspSymbol;
+
+					for (const aspSymbol of collection.values()) {
+						if (aspSymbol.type && aspSymbol.symbol.name === matches[1].toString() && aspSymbol.sourceFilePath === doc.uri.fsPath) {
+							symbolForVariable = aspSymbol;
+							console.log('FOUND SYMBOL: ', aspSymbol);
+						}
+					}
+
+					for (const aspSymbol of collection.values()) {
+						if (aspSymbol.symbol.name === matches[3].toString()) {
+							symbolForObject = aspSymbol;
+							console.log('FOUND SYMBOL FOR OBJECT: ', aspSymbol);
+						}
+					}
+					
+					const r = new Range(line.lineNumber, 0, line.lineNumber, PATTERNS.CLASS_VAR.lastIndex);
+					const cleanVariableName = matches[3].replace(PATTERNS.ARRAYBRACKETS, "").trim();
+
+					let variableSymbol: AspSymbol = {
+						documentation: symbolForObject.documentation,
+						isTopLevel: false,
+						sourceFile: symbolForObject.sourceFile,
+						sourceFilePath: symbolForObject.sourceFilePath,
+						isBuiltIn: false,
+						symbol: new DocumentSymbol(cleanVariableName, null, symbolForObject.symbol.kind, r, r),
+						regionStartLine: line.lineNumber,
+						parentName: symbolForObject.parentName
+					};
+
+					collection.add(variableSymbol);
+					result.push(variableSymbol.symbol);
+
+					docClassVariables.get(doc.fileName).set(`${matches[1]}.${matches[3]}`, variableSymbol);
+				}
       }
 
 			// If we have a symbol, let's add it to our collection
@@ -388,14 +430,21 @@ async function provideDocumentSymbols(doc: TextDocument): Promise<DocumentSymbol
 			docSymbols.set(doc.fileName, new Set<AspSymbol>())
 		}
 
+		if (!docClassVariables.has(doc.fileName)) {
+			docClassVariables.set(doc.fileName, new Map<string, AspSymbol>());
+		}
+
 		// Clear out the current doc symbols to reload them
 		currentDocSymbols(doc.fileName).clear();
+		docClassVariables.get(doc.fileName).clear();
 		
+		// Get the doc symbols of includes
+		await provideDocumentSymbolsForIncludes(doc, currentDocSymbols(doc.fileName));
+
 		// Get the local doc symbols
 		const localSymbols = getSymbolsForDocument(doc, currentDocSymbols(doc.fileName));
 
-		// Get the doc symbols of includes
-		await provideDocumentSymbolsForIncludes(doc, currentDocSymbols(doc.fileName));
+		console.log('doc symbols: ', currentDocSymbols(doc.fileName));
 
 		// We return the local symbols as they are displayed in the document Outline
 		return localSymbols;
@@ -440,11 +489,19 @@ export function getSymbolAtPosition(doc: TextDocument, position: Position): AspS
   const wordRange = doc.getWordRangeAtPosition(position);
 
 	// Get the parent name, like {parentName}.{hoverWord}
-	const parentName = getParentOfMember(doc, position);
+	let parentName = getParentOfMember(doc, position);
 
   const word: string = wordRange ? doc.getText(wordRange) : "";
 
 	const allSymbols = new Set([...builtInSymbols, ...currentDocSymbols(doc.fileName)]);
+
+	if (parentName) {
+		const key = `${parentName}.${word}`;
+
+		if (!docClassVariables.get(doc.fileName).has(key)) return;
+
+		parentName = docClassVariables.get(doc.fileName).get(key).parentName;
+	}
 
 	for(const item of allSymbols) {
 		const symbol = item.symbol;
