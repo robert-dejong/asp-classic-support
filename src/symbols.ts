@@ -6,8 +6,7 @@ import * as path from "path";
 import { getImportedFiles, includes } from "./includes";
 import { builtInSymbols, output } from "./extension";
 import { getAspRegions, getRegionsInsideRange, positionIsInsideAspRegion, regionIsInsideAspRegion, replaceCharacter } from "./region";
-import { AspDocumentation, AspSymbol, VirtualPath } from "./types";
-import { parseType } from "./parseVariableType";
+import { AspDocumentation, AspSymbol } from "./types";
 
 const showVariableSymbols: boolean = workspace.getConfiguration("asp").get<boolean>("showVariableSymbols");
 const showParameterSymbols: boolean = workspace.getConfiguration("asp").get<boolean>("showParameterSymbols");
@@ -234,10 +233,8 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
 								variableSymbol.definition = lineText.trim().replace(/\bconst\b/i, "Const");
               }
               else if ((/\bSet\b/i).test(matches[0])) {
-								const variableType = parseType(matches[3]?.toString(), collection);
                 symKind = SymbolKind.Struct;
-								variableSymbol.definition = `Set ${cleanVariableName} as ${variableType?.type}${matches[3]}`;
-								variableSymbol.type = variableType.type;
+								variableSymbol.definition = `Set ${cleanVariableName}${matches[3]}`;
               }
               else if ((/\w+[\t ]*\([\t ]*\d*[\t ]*\)/i).test(variableName)) {
                 symKind = SymbolKind.Array;
@@ -268,21 +265,18 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
         }
 
 				while ((matches = PATTERNS.CLASS_VAR.exec(lineText)) !== null) {
-					console.log('FOUND: ', matches);
 					let symbolForVariable: AspSymbol;
 					let symbolForObject: AspSymbol;
 
 					for (const aspSymbol of collection.values()) {
-						if (aspSymbol.type && aspSymbol.symbol.name === matches[1].toString() && aspSymbol.sourceFilePath === doc.uri.fsPath) {
+						if (aspSymbol.symbol.name === matches[1].toString() && aspSymbol.sourceFilePath === doc.uri.fsPath) {
 							symbolForVariable = aspSymbol;
-							console.log('FOUND SYMBOL: ', aspSymbol);
 						}
 					}
 
 					for (const aspSymbol of collection.values()) {
 						if (aspSymbol.symbol.name === matches[3].toString()) {
 							symbolForObject = aspSymbol;
-							console.log('FOUND SYMBOL FOR OBJECT: ', aspSymbol);
 						}
 					}
 					
@@ -443,8 +437,6 @@ async function provideDocumentSymbols(doc: TextDocument): Promise<DocumentSymbol
 
 		// Get the local doc symbols
 		const localSymbols = getSymbolsForDocument(doc, currentDocSymbols(doc.fileName));
-
-		console.log('doc symbols: ', currentDocSymbols(doc.fileName));
 
 		// We return the local symbols as they are displayed in the document Outline
 		return localSymbols;

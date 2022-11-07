@@ -1,25 +1,21 @@
 import { AspSymbol } from "./types";
 
-export function parseType(variableSetter: string | undefined, collection: Set<AspSymbol>): VariableType | undefined {
+export function parseType(variableSetter: string | undefined): string {
   if (!variableSetter) return undefined;
   
   // Cleanup white space, new and =
   variableSetter = variableSetter.replace(/[\t =\(\)]*([\t ]*new[\t ])*/g, "");
-  const type = getTypeByValue(variableSetter);
-  return {
-    type: type,
-    sourceFile: "",
-    sourceFilePath: ""
-  } as VariableType;
+
+  return getTypeByValue(variableSetter);
 }
 
-function getTypeByValue(value: string) {
-  if (value.startsWith("'") || value.startsWith("\"")) return "String";
-  if (value.indexOf(".") < 0 && !isNaN(parseInt(value)) && +value % 1 === 0) return "Integer";
-  if (value.indexOf(".") > -1 && !isNaN(parseFloat(value))) return "Double";
-  if (value.toLowerCase() === "nothing") return "Object";
+function getTypeByValue(value: string): string {
+  if (value.startsWith("'") || value.startsWith("\"")) return Types.String;
+  if (value.indexOf(".") < 0 && !isNaN(parseInt(value)) && +value % 1 === 0) return Types.Integer;
+  if (value.indexOf(".") > -1 && !isNaN(parseFloat(value))) return Types.Double;
+  if (value.toLowerCase() === "nothing") return Types.Object;
 
-  return value;
+  return Types.Object;
 }
 
 function findSymbolByType(type: string, collection: Set<AspSymbol>) {
@@ -31,9 +27,10 @@ function findSymbolByType(type: string, collection: Set<AspSymbol>) {
 	}
 }
 
-export class VariableType {
-  type: string;
-  symbol: AspSymbol;
-  sourceFile: string;
-	sourceFilePath: string;
+enum Types {
+  String = "String",
+  Integer = "Integer",
+  Double = "Double",
+  Object = "Object",
+  Dictionary = "Dictionary"
 }

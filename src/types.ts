@@ -22,7 +22,7 @@ export interface AspSymbol {
 	documentation?: AspDocumentation;
 
 	isBuiltIn: boolean;
-	type?: string;
+	// type?: string;
 }
 
 export interface AspDocumentation {
