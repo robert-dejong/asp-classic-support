@@ -265,20 +265,15 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
         }
 
 				while ((matches = PATTERNS.CLASS_VAR.exec(lineText)) !== null) {
-					let symbolForVariable: AspSymbol;
 					let symbolForObject: AspSymbol;
-
-					for (const aspSymbol of collection.values()) {
-						if (aspSymbol.symbol.name === matches[1].toString() && aspSymbol.sourceFilePath === doc.uri.fsPath) {
-							symbolForVariable = aspSymbol;
-						}
-					}
 
 					for (const aspSymbol of collection.values()) {
 						if (aspSymbol.symbol.name === matches[3].toString()) {
 							symbolForObject = aspSymbol;
 						}
 					}
+
+					if (!symbolForObject || !symbolForObject.symbol) continue;
 					
 					const r = new Range(line.lineNumber, 0, line.lineNumber, PATTERNS.CLASS_VAR.lastIndex);
 					const cleanVariableName = matches[3].replace(PATTERNS.ARRAYBRACKETS, "").trim();
