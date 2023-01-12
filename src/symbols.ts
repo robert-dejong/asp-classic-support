@@ -48,7 +48,7 @@ const CLASS = RegExp(PATTERNS.CLASS.source, "i");
 const PROP = RegExp(PATTERNS.PROP.source, "i");
 
 const docSymbols = new Map <string, Set<AspSymbol>>();
-const docClassVariables = new Map<string, Map<string, AspSymbol>>();
+const docReferencedProperties = new Map<string, Map<string, AspSymbol>>();
 
 export const currentDocSymbols = (docFileName: string) => docSymbols.has(docFileName) ?
 	docSymbols.get(docFileName) :
@@ -139,7 +139,7 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
 
 			aspSymbol.sourceFile = fileName;
 
-      let matches: RegExpMatchArray | null = [];
+      let matches: RegExpMatchArray;
 
       if ((matches = CLASS.exec(lineText)) !== null) {
 
@@ -210,6 +210,7 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
           for (const variableName of variableNames) {
 
             const cleanVariableName = variableName.replace(PATTERNS.ARRAYBRACKETS, "").trim();
+						const assignment = `${matches[3]}`.trim();
 
 						let variableSymbol: AspSymbol = {
 							documentation: aspSymbol.documentation,
@@ -234,7 +235,7 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
               }
               else if ((/\bSet\b/i).test(matches[0])) {
                 symKind = SymbolKind.Struct;
-								variableSymbol.definition = `Set ${cleanVariableName}${matches[3]}`;
+								variableSymbol.definition = `Set ${cleanVariableName} ${assignment}`;
               }
               else if ((/\w+[\t ]*\([\t ]*\d*[\t ]*\)/i).test(variableName)) {
                 symKind = SymbolKind.Array;
@@ -292,7 +293,7 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
 					collection.add(variableSymbol);
 					result.push(variableSymbol.symbol);
 
-					docClassVariables.get(doc.fileName).set(`${matches[1]}.${matches[3]}`, variableSymbol);
+					addReferencedProperty(doc, matches[1], matches[3], variableSymbol);
 				}
       }
 
@@ -373,7 +374,7 @@ export function getDocsForLine(doc: TextDocument, line: TextLine): AspDocumentat
 		comment += `${sortedLine.text.replace(/^\s*'+/, '')}  \n`;
 	}
 
-	let matches: RegExpMatchArray | null = [];
+	let matches: RegExpMatchArray;
 
 	// Initialize documentation with the raw comment text in case we have no "real" matches below (e.g. we have just a plain comment and not ''' summary)
 	const documentation: AspDocumentation = { rawSummary: comment };
@@ -419,13 +420,13 @@ async function provideDocumentSymbols(doc: TextDocument): Promise<DocumentSymbol
 			docSymbols.set(doc.fileName, new Set<AspSymbol>())
 		}
 
-		if (!docClassVariables.has(doc.fileName)) {
-			docClassVariables.set(doc.fileName, new Map<string, AspSymbol>());
+		if (!docReferencedProperties.has(doc.fileName)) {
+			docReferencedProperties.set(doc.fileName, new Map<string, AspSymbol>());
 		}
 
 		// Clear out the current doc symbols to reload them
 		currentDocSymbols(doc.fileName).clear();
-		docClassVariables.get(doc.fileName).clear();
+		docReferencedProperties.get(doc.fileName).clear();
 		
 		// Get the doc symbols of includes
 		await provideDocumentSymbolsForIncludes(doc, currentDocSymbols(doc.fileName));
@@ -485,9 +486,9 @@ export function getSymbolAtPosition(doc: TextDocument, position: Position): AspS
 	if (parentName) {
 		const key = `${parentName}.${word}`;
 
-		if (!docClassVariables.get(doc.fileName).has(key)) return;
+		if (!docReferencedProperties.has(doc.fileName) || !docReferencedProperties.get(doc.fileName).has(key)) return;
 
-		parentName = docClassVariables.get(doc.fileName).get(key).parentName;
+		parentName = docReferencedProperties.get(doc.fileName).get(key).parentName;
 	}
 
 	for(const item of allSymbols) {
@@ -561,6 +562,14 @@ export function getParentOfMember(doc: TextDocument, position: Position): string
 	const precedingWordRange = doc.getWordRangeAtPosition(new Position(position.line, precedingCharacterIndex - 1));
 
 	return doc.getText(precedingWordRange);
+}
+
+function addReferencedProperty(document: TextDocument, variable: string, referencedProperty: string, variableSymbol: AspSymbol) {
+	if (!docReferencedProperties.has(document.fileName)) {
+		docReferencedProperties.set(document.fileName, new Map<string, AspSymbol>());
+	}
+
+	docReferencedProperties.get(document.fileName).set(`${variable}.${referencedProperty}`, variableSymbol);
 }
 
 export default languages.registerDocumentSymbolProvider(
