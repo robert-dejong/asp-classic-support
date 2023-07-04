@@ -47,8 +47,14 @@ const CLASS = RegExp(PATTERNS.CLASS.source, "i");
  */
 const PROP = RegExp(PATTERNS.PROP.source, "i");
 
+interface LineData {
+	block: number;
+	aspSymbol: AspSymbol;
+}
+
 const docSymbols = new Map <string, Set<AspSymbol>>();
 const docReferencedProperties = new Map<string, Map<string, AspSymbol>>();
+const docLineData = new Map<string, Map<number, LineData>>();
 
 export const currentDocSymbols = (docFileName: string) => docSymbols.has(docFileName) ?
 	docSymbols.get(docFileName) :
@@ -328,6 +334,13 @@ function getSymbolsForDocument(doc: TextDocument, collection: Set<AspSymbol>): D
       if ((matches = PATTERNS.ENDLINE.exec(lineText)) !== null) {
         blocks.pop();
       }
+
+			const lineData = {
+				block: blocks.length,
+				aspSymbol: aspSymbol
+			};
+
+			addDocLineData(doc, line.lineNumber, lineData);
     }
   } // next linenum
 
@@ -570,6 +583,14 @@ function addReferencedProperty(document: TextDocument, variable: string, referen
 	}
 
 	docReferencedProperties.get(document.fileName).set(`${variable}.${referencedProperty}`, variableSymbol);
+}
+
+function addDocLineData(document: TextDocument, lineNumber: number, lineData: LineData) {
+	if (!docLineData.has(document.fileName)) {
+		docLineData.set(document.fileName, new Map<number, LineData>());
+	}
+
+	docLineData.get(document.fileName).set(lineNumber, lineData);
 }
 
 export default languages.registerDocumentSymbolProvider(
